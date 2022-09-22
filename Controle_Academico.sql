@@ -39,14 +39,15 @@ begin
 	@nota1 decimal(10,2),
 	@nota2 decimal(10,2),
 	@media decimal(10,2),
+	@ano int,
+	@semestre int,
 	@ra int,
-	@freq float,
 	@sigla varchar(3)
 
-	select @nota1 = nota1, @nota2 = nota2, @sigla = sigla, @freq= frequencia, @ra = ra from inserted
+	select @ano = dataAno, @semestre = dataSemestre, @nota1 = nota1, @nota2 = nota2, @sigla = sigla, @ra = ra from inserted
 	select @media = (@nota1 + @nota2) / 2
 	update matricula set media = @media
-	where ra = @ra and sigla = @sigla
+	where ra = @ra and sigla = @sigla and dataAno = @ano and dataSemestre = @semestre
 end
 
 create trigger calculoFreq
@@ -60,9 +61,11 @@ begin
 		@ra int,
 		@sigla varchar(3), 
 		@cargaHr int,
-		@freq decimal(10,2)
+		@freq decimal(10,2),
+		@ano int,
+		@semestre int
 	
-	select @falta = faltas, @sigla = sigla,  @ra = ra from inserted
+	select @falta = faltas, @ano = dataAno, @semestre = dataSemestre, @sigla = sigla, @ra = ra from inserted
 
 	select @cargaHr = carga_horaria
 	from disciplina
@@ -71,7 +74,7 @@ begin
 	select @freq = (1-(@falta/@cargaHr)) * 100
 
 	update matricula set frequencia = @freq
-	where ra = @ra and sigla = @sigla;
+	where ra = @ra and sigla = @sigla and dataAno = @ano and dataSemestre = @semestre
 end
 
 
@@ -86,21 +89,23 @@ begin
 	@notaSub float,
 	@media float,
 	@ra int,
-	@sigla varchar(11)
+	@sigla varchar(3),
+	@ano int,
+	@semestre int
 
-	select @nota1 = nota1, @nota2 = nota2, @media = media, @notaSub = notaSub, @sigla = sigla, @ra = ra from inserted
+	select @ano = dataAno, @semestre = dataSemestre,@notaSub = notaSub, @nota1 = nota1, @nota2 = nota2, @sigla = sigla, @ra = ra from inserted
 
 	if(@nota1 > @nota2)
 		begin
 		select @media = (@nota1 + @notaSub)/2
 		update matricula set media = @media
-		where ra = @ra and sigla = @sigla
+		where ra = @ra and sigla = @sigla and dataAno = @ano and dataSemestre = @semestre
 		end
 	else
 		begin
 		select @media = (@nota2 + @notaSub)/2
 		update matricula set media = @media
-		where ra = @ra and sigla = @sigla
+		where ra = @ra and sigla = @sigla and dataAno = @ano and dataSemestre = @semestre
 		end
 end
 
@@ -111,40 +116,38 @@ begin
 	@media float,
 	@ra int,
 	@sigla varchar(3),
-	@freq float
+	@freq float,
+	@notaSub float
 
-	select @ra = ra, @sigla = sigla, @freq = frequencia, @media = media from inserted
+	select @notaSub = notaSub, @ra = ra, @sigla = sigla, @freq = frequencia, @media = media from inserted
 
-	if(@media >= 5 and @freq > 75)
+	 if(@freq < 75)
+	begin
+		update matricula set situacao = 'REPROVADO POR FALTA'
+		where ra = @ra and sigla = @sigla
+	end
+	else if(@media >= 5)
 		begin
 		update matricula set situacao = 'APROVADO'
 		where ra = @ra and sigla = @sigla
 	end
-	else if(@media < 5)
+	else if(@media < 5 and @notaSub <> null)
 	begin
 		update matricula set situacao = 'REPROVADO POR NOTA'
-		where ra = @ra and sigla = @sigla
-	end
-	else if(@freq < 75)
-	begin
-		update matricula set situacao = 'REPROVADO POR FALTA'
 		where ra = @ra and sigla = @sigla
 	end
 end
 
 create trigger rematricula on matricula
-after update as if update(media) or update(frequencia)
+after update as if (select situacao from inserted) <> 'APROVADO'
 begin
 	declare
 	@ra int, @sigla varchar(3), @situacao varchar(20), @notaSub float, @freq float
 	
 	select @ra = ra, @sigla = sigla, @freq = frequencia, @situacao = situacao from inserted
 
-	if(@situacao <> 'APROVADO')
-		begin
-		insert into matricula(ra,sigla, dataAno, dataSemestre)
-		values(@ra, @sigla, 2022,1)
-		end
+	insert into matricula(ra,sigla, dataAno, dataSemestre)
+	values(@ra, @sigla, 2022,1)
 end
 
 insert into aluno(ra, nome)
@@ -157,22 +160,22 @@ insert into matricula(ra, sigla, dataAno, dataSemestre)
 values(1,'ED', 2021,2),(2,'CA', 2021,2),(3,'ED', 2021,2),(4,'PT', 2021,2),(5,'LGP', 2021,2),(6,'JS', 2021,2),(7,'LC+', 2021,2),(8,'LC#', 2021,2),(9,'CSS', 2021,2),(10,'HTM', 2021,2)
 
 update matricula
-set nota1 =10, nota2 = 10, faltas = 1
-where ra = 5 and sigla = 'LGP' and dataAno = 2021
+set nota2 = 10, faltas = 100
+where ra = 1 and sigla = 'ED' and dataAno = 2021
 
 update matricula
-set notaSub = 5
-where ra = 4 and sigla = 'PT' and dataAno = 2021
+set notaSub = 10
+where ra = 1 and sigla = 'ED' and dataAno = 2021 and dataSemestre = 2
 
 --alunos matriculas
 select a.ra 'RA Aluno', a.nome 'Nome Aluno', d.nome 'Disciplina',  m.nota1 'Nota 1', m.nota2 'Nota 2', m.notaSub 'Nota Sub', m.media 'Media', m.frequencia 'Freq %', m.situacao 'Situação Final'
 from aluno a, matricula m, disciplina d
-where m.sigla = 'ED' and a.ra = m.ra and m.sigla = d.sigla and m.dataAno = 2021
+where m.sigla = 'LC+' and a.ra = m.ra and m.sigla = d.sigla and m.dataAno = 2021
 
 --aluno individual
 select a.ra 'RA Aluno', a.nome 'Nome Aluno', d.nome 'Disciplina',  m.nota1 'Nota 1', m.nota2 'Nota 2', m.notaSub 'Nota Sub', m.media 'Media', m.frequencia 'Freq %', m.situacao 'Situação Final'
 from aluno a, matricula m, disciplina d
-where  a.ra = 4 and a.ra = m.ra and m.sigla = d.sigla and m.dataAno = 2021
+where  a.ra = 4 and a.ra = m.ra and m.sigla = d.sigla and m.dataAno = 2022
 
 --alunos reprovados
 select a.ra 'RA Aluno', a.nome 'Nome Aluno', d.nome 'Disciplina',  m.nota1 'Nota 1', m.nota2 'Nota 2', m.notaSub 'Nota Sub', m.media 'Media', m.frequencia 'Freq %', m.situacao 'Situação Final'
@@ -183,3 +186,5 @@ where m.situacao <> 'APROVADO' and a.ra = m.ra and m.sigla = d.sigla and m.dataA
 select a.ra 'RA aluno', a.nome 'Nome aluno', m.sigla 'Sigla disciplina', d.nome 'Nome Disciplina',m.nota1 'Nota 1° Bimestre', m.nota2 'Nota 2° Bimestre' , m.media 'Media final', m.frequencia 'Frequencia final', m.situacao 'Situação final'
 from aluno a, matricula m, disciplina d
 where a.ra = m.ra and m.sigla = d.sigla and m.dataAno = 2021
+
+select * from matricula
